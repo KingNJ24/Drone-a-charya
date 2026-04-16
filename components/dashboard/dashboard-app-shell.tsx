@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -23,7 +23,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { createClient } from '@/lib/supabase/client'
+import { apiClient } from '@/lib/api-client'
 import {
   Bell,
   Briefcase,
@@ -38,39 +38,44 @@ import {
   Search,
   Sun,
   User,
+  LogOut,
+  Settings,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import {
-  MOCK_ACTIVE_COLLABORATORS,
-  MOCK_ME,
-  MOCK_MENTORS,
-  MOCK_TRENDING,
-} from '@/lib/mock/dashboard-data'
+import { toast } from 'sonner'
 import { CreateProjectModal } from '@/components/dashboard/create-project-modal'
 import { RoleBadge } from '@/components/dashboard/role-badge'
-import { useViewerRole } from '@/hooks/use-viewer-role'
-import type { AppRole } from '@/lib/role'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 
-function navForRole(role: AppRole) {
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+  avatar?: string
+}
+
+function navForRole(role: string) {
   const items: {
     href: string
     label: string
     icon: LucideIcon
   }[] = [
-    { href: '/dashboard', label: 'Home', icon: Home },
-    { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
+    { href: '/dashboard/feed', label: 'Feed', icon: Home },
+    { href: '/dashboard/projects', label: 'My Projects', icon: FolderKanban },
   ]
-  if (role === 'student') {
+  if (role === 'STUDENT') {
     items.push({
       href: '/dashboard/mentors',
-      label: 'Mentor Connect',
+      label: 'Find Mentors',
       icon: GraduationCap,
     })
   }
   items.push({ href: '/dashboard/explore', label: 'Explore', icon: Compass })
-  if (role === 'student' || role === 'company') {
+  items.push({ href: '/dashboard/messages', label: 'Messages', icon: MessageSquare })
+  
+  if (role === 'STUDENT' || role === 'COMPANY') {
     items.push({ href: '/dashboard/gigs', label: 'Gigs', icon: Briefcase })
   }
   items.push({ href: '/dashboard/profile', label: 'Profile', icon: User })
@@ -84,7 +89,7 @@ function NavLinks({
 }: {
   pathname: string
   onNavigate?: () => void
-  role: AppRole
+  role: string
 }) {
   const nav = navForRole(role)
   return (
@@ -119,80 +124,20 @@ function RightRail() {
     <aside className="hidden w-[320px] shrink-0 xl:block">
       <div className="sticky top-16 space-y-4 pb-8 pt-4">
         <div className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
-          <p className="text-sm font-semibold tracking-tight">Suggested Mentors</p>
+          <p className="text-sm font-semibold tracking-tight">Suggested Connections</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Teachers active in autonomy & safety
+            People you might know in drone tech
           </p>
-          <ul className="mt-4 space-y-4">
-            {MOCK_MENTORS.map((m) => (
-              <li key={m.id} className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 gap-2">
-                  <Avatar className="size-9">
-                    <AvatarFallback className="text-xs font-semibold">
-                      {m.name.slice(0, 2)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium leading-tight">
-                      {m.name}
-                    </p>
-                    <RoleBadge role="teacher" className="mt-1" />
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {m.specialty}
-                    </p>
-                  </div>
-                </div>
-                <Button size="sm" variant="outline" className="shrink-0 rounded-full text-xs" asChild>
-                  <Link href="/dashboard/mentors">View</Link>
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-4 p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
+            Suggestions coming soon
+          </div>
         </div>
 
         <div className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-sm backdrop-blur-sm">
           <p className="text-sm font-semibold">Trending Projects</p>
-          <ul className="mt-3 space-y-3">
-            {MOCK_TRENDING.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/dashboard/projects/${encodeURIComponent(p.id)}`}
-                  className="group block rounded-xl p-2 transition-colors hover:bg-muted/60"
-                >
-                  <p className="text-sm font-medium text-primary underline-offset-4 group-hover:underline">
-                    {p.owner}/{p.name}
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {p.description}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    ★ {p.stars.toLocaleString()}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-sm">
-          <p className="text-sm font-semibold">Active Collaborators</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Shipping across the network this week
-          </p>
-          <ul className="mt-3 space-y-3">
-            {MOCK_ACTIVE_COLLABORATORS.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center justify-between gap-2 rounded-xl p-2 hover:bg-muted/50"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{c.name}</p>
-                  <p className="text-xs text-muted-foreground">{c.activeOn}</p>
-                  <RoleBadge role={c.role} className="mt-1.5" />
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-4 p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
+            Trending projects coming soon
+          </div>
         </div>
       </div>
     </aside>
@@ -205,13 +150,25 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
   const { theme, setTheme } = useTheme()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const { role: viewerRole } = useViewerRole()
+  const [user, setUser] = useState<User | null>(null)
 
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push('/')
+  useEffect(() => {
+    const storedUser = localStorage.getItem('dronehub_user')
+    if (storedUser) {
+      setUser(JSON.parse(storedUser))
+    } else {
+      router.push('/auth/login')
+    }
+  }, [router])
+
+  const handleLogout = () => {
+    apiClient.logout()
+    localStorage.removeItem('dronehub_user')
+    toast.success('Logged out successfully')
+    router.push('/auth/login')
   }
+
+  if (!user) return null
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -241,125 +198,114 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
                 <NavLinks
                   pathname={pathname}
                   onNavigate={() => setMobileOpen(false)}
-                  role={viewerRole}
+                  role={user.role}
                 />
               </ScrollArea>
             </SheetContent>
           </Sheet>
 
           <Link
-            href="/dashboard"
-            className="flex shrink-0 items-center gap-2 font-semibold tracking-tight"
+            href="/dashboard/feed"
+            className="hidden items-center gap-2 md:flex"
           >
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
               DH
-            </span>
-            <span className="hidden sm:inline">DroneHub</span>
+            </div>
+            <span className="text-lg font-bold tracking-tight">DroneHub</span>
           </Link>
 
-          <div className="relative mx-auto hidden max-w-xl flex-1 md:block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative flex-1 md:ml-6 md:max-w-md">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search users, projects, skills..."
-              className="h-10 rounded-full border-border/80 bg-muted/40 pl-10 pr-4 shadow-inner"
+              type="search"
+              placeholder="Search projects, people, or gigs..."
+              className="h-9 w-full rounded-full border-border/80 bg-muted/50 pl-9 transition-all focus-visible:bg-background focus-visible:ring-primary/50 md:w-80 lg:w-96"
             />
           </div>
 
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full md:hidden"
-              asChild
-            >
-              <Link href="/dashboard/search" aria-label="Search">
-                <Search className="size-5" />
-              </Link>
-            </Button>
-            <Button variant="ghost" size="icon" className="rounded-full" asChild>
-              <Link href="/dashboard/notifications" aria-label="Notifications">
-                <Bell className="size-5" />
-              </Link>
-            </Button>
-            <Button variant="ghost" size="icon" className="rounded-full" asChild>
-              <Link href="/dashboard/messages" aria-label="Messages">
-                <MessageSquare className="size-5" />
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative rounded-full"
+              className="hidden rounded-full md:flex"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle theme"
             >
-              <Sun className="size-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute size-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              {theme === 'dark' ? (
+                <Sun className="size-5" />
+              ) : (
+                <Moon className="size-5" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden rounded-full md:flex"
+            >
+              <Bell className="size-5" />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="gap-2 rounded-full pl-2 pr-1"
+                  className="relative size-8 rounded-full p-0 ring-offset-background transition-all hover:ring-2 hover:ring-primary/20"
                 >
                   <Avatar className="size-8">
-                    <AvatarImage src={MOCK_ME.avatarUrl} alt="" />
-                    <AvatarFallback>{MOCK_ME.name.slice(0, 2)}</AvatarFallback>
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
+                      {user.name ? user.name.slice(0, 2).toUpperCase() : '??'}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 rounded-xl">
-                <DropdownMenuLabel className="space-y-1">
-                  <p className="text-sm font-medium">{MOCK_ME.name}</p>
-                  <RoleBadge role={MOCK_ME.role} />
+              <DropdownMenuContent className="w-56 rounded-xl" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{user.name}</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.email}
+                    </p>
+                  </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild className="rounded-lg">
-                  <Link href="/dashboard/profile">Profile</Link>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/profile" className="flex items-center gap-2 cursor-pointer">
+                    <User className="size-4" /> Profile
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild className="rounded-lg">
-                  <Link href="/dashboard/settings">Settings</Link>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/settings" className="flex items-center gap-2 cursor-pointer">
+                    <Settings className="size-4" /> Settings
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="rounded-lg text-destructive focus:text-destructive"
+                <DropdownMenuItem 
+                  variant="destructive"
+                  className="flex items-center gap-2 cursor-pointer"
                   onClick={handleLogout}
                 >
-                  Log out
+                  <LogOut className="size-4" /> Log out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </div>
-        <div className="border-t border-border/60 px-4 py-2 md:hidden">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search users, projects, skills..."
-              className="h-9 rounded-full border-border/80 bg-muted/40 pl-9"
-            />
+            <Button
+              className="hidden h-9 items-center gap-2 rounded-full px-4 md:flex"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="size-4" /> Create
+            </Button>
           </div>
         </div>
       </header>
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-56 shrink-0 border-r border-border/80 bg-muted/20 md:block lg:w-60">
-          <ScrollArea className="h-full">
-            <div className="p-3">
-              <NavLinks pathname={pathname} role={viewerRole} />
-              <Separator className="my-4" />
-              <p className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                DroneHub
-              </p>
-              <p className="px-3 pb-2 text-xs leading-relaxed text-muted-foreground">
-                LinkedIn-style network + GitHub-style projects for drone teams.
-              </p>
-            </div>
-          </ScrollArea>
+        <aside className="hidden w-64 shrink-0 border-r border-border/80 md:block">
+          <div className="sticky top-14 flex flex-col justify-between py-4">
+            <NavLinks pathname={pathname} role={user.role} />
+          </div>
         </aside>
 
-        <main className="min-w-0 flex-1 border-x border-border/40 bg-background/50">
-          <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">{children}</div>
+        <main className="flex-1 px-4 py-8 md:px-8">
+          {children}
         </main>
 
         <RightRail />

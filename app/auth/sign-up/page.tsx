@@ -1,6 +1,6 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
+import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -21,11 +21,12 @@ import {
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [role, setRole] = useState<'student' | 'teacher' | 'company'>('student')
+  const [role, setRole] = useState<'STUDENT' | 'TEACHER' | 'COMPANY'>('STUDENT')
   const [password, setPassword] = useState('')
   const [repeatPassword, setRepeatPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +35,6 @@ export default function SignUpPage() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
@@ -45,23 +45,23 @@ export default function SignUpPage() {
     }
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-            `${window.location.origin}/auth/callback`,
-          data: {
-            name,
-            role,
-          },
-        },
-      })
-      if (error) throw error
-      router.push('/auth/sign-up-success')
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const response = await apiClient.post<{ token: string; user: any }>(
+        '/api/auth/signup',
+        {
+          name,
+          email,
+          password,
+          role,
+        }
+      )
+      apiClient.setToken(response.token)
+      localStorage.setItem('dronehub_user', JSON.stringify(response.user))
+      toast.success('Account created successfully!')
+      router.push('/dashboard')
+    } catch (error: any) {
+      const msg = error.message || 'An error occurred during sign up'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setIsLoading(false)
     }
@@ -127,9 +127,9 @@ export default function SignUpPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="teacher">Teacher/Educator</SelectItem>
-                    <SelectItem value="company">Company/Professional</SelectItem>
+                    <SelectItem value="STUDENT">Student</SelectItem>
+                    <SelectItem value="TEACHER">Teacher/Educator</SelectItem>
+                    <SelectItem value="COMPANY">Company/Professional</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -30,6 +30,20 @@ export const userService = {
     return user
   },
 
+  async listByRole(role: 'STUDENT' | 'TEACHER' | 'COMPANY') {
+    return prisma.user.findMany({
+      where: { role },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        avatar: true,
+        bio: true,
+        skills: true,
+      },
+    })
+  },
+
   async update(userId: string, data: { name?: string; bio?: string; skills?: string[]; avatar?: string }) {
     return prisma.user.update({
       where: { id: userId },

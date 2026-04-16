@@ -2,19 +2,21 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { apiClient } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 
 export default function CreateProjectPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({
-    name: '',
+    title: '',
     description: '',
-    repository_url: '',
-    visibility: 'public' as 'public' | 'private',
+    repoLink: '',
+    tags: '',
+    visibility: 'PUBLIC' as 'PUBLIC' | 'PRIVATE',
   })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -25,22 +27,18 @@ export default function CreateProjectPage() {
     setLoading(true)
 
     try {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        setError('You must be logged in')
-        return
+      const payload = {
+        ...formData,
+        tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
       }
 
-      // This would be an API call to create the project
-      // For now, we'll just redirect to projects page
-      console.log('Creating project:', { ...formData, owner_id: user.id })
-      router.push('/dashboard/projects')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project')
+      await apiClient.post('/api/projects', payload)
+      toast.success('Project created successfully!')
+      router.push('/dashboard/feed')
+    } catch (err: any) {
+      const msg = err.message || 'Failed to create project'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -64,15 +62,15 @@ export default function CreateProjectPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium">
-                  Project Name
+                <Label htmlFor="title" className="text-sm font-medium">
+                  Project Title
                 </Label>
                 <Input
-                  id="name"
+                  id="title"
                   placeholder="e.g., Agricultural Drone Mapper"
-                  value={formData.name}
+                  value={formData.title}
                   onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
+                    setFormData({ ...formData, title: e.target.value })
                   }
                   disabled={loading}
                   className="border-primary/20 focus-visible:ring-primary/50"
@@ -98,16 +96,32 @@ export default function CreateProjectPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="repository_url" className="text-sm font-medium">
+                <Label htmlFor="repoLink" className="text-sm font-medium">
                   Repository URL (Optional)
                 </Label>
                 <Input
-                  id="repository_url"
+                  id="repoLink"
                   type="url"
                   placeholder="https://github.com/username/project"
-                  value={formData.repository_url}
+                  value={formData.repoLink}
                   onChange={(e) =>
-                    setFormData({ ...formData, repository_url: e.target.value })
+                    setFormData({ ...formData, repoLink: e.target.value })
+                  }
+                  disabled={loading}
+                  className="border-primary/20 focus-visible:ring-primary/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tags" className="text-sm font-medium">
+                  Tags (comma separated)
+                </Label>
+                <Input
+                  id="tags"
+                  placeholder="e.g., drone, ai, agriculture"
+                  value={formData.tags}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tags: e.target.value })
                   }
                   disabled={loading}
                   className="border-primary/20 focus-visible:ring-primary/50"
@@ -123,12 +137,12 @@ export default function CreateProjectPage() {
                     <input
                       type="radio"
                       name="visibility"
-                      value="public"
-                      checked={formData.visibility === 'public'}
+                      value="PUBLIC"
+                      checked={formData.visibility === 'PUBLIC'}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          visibility: e.target.value as 'public' | 'private',
+                          visibility: e.target.value as 'PUBLIC' | 'PRIVATE',
                         })
                       }
                       disabled={loading}
@@ -141,12 +155,12 @@ export default function CreateProjectPage() {
                     <input
                       type="radio"
                       name="visibility"
-                      value="private"
-                      checked={formData.visibility === 'private'}
+                      value="PRIVATE"
+                      checked={formData.visibility === 'PRIVATE'}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          visibility: e.target.value as 'public' | 'private',
+                          visibility: e.target.value as 'PUBLIC' | 'PRIVATE',
                         })
                       }
                       disabled={loading}

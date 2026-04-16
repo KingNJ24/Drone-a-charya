@@ -25,6 +25,19 @@ export const connectionService = {
     })
   },
 
+  async getPendingRequests(userId: string) {
+    return prisma.connection.findMany({
+      where: {
+        receiverId: userId,
+        status: 'PENDING',
+      },
+      include: {
+        sender: { select: userPreview },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  },
+
   async create(senderId: string, receiverId: string) {
     if (senderId === receiverId) {
       throw new AppError('Cannot connect with yourself', 400, 'SELF_CONNECTION')

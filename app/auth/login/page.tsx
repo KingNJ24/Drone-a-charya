@@ -1,6 +1,6 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
+import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -24,19 +25,22 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) throw error
+      const response = await apiClient.post<{ token: string; user: any }>(
+        '/api/auth/login',
+        { email, password }
+      )
+      apiClient.setToken(response.token)
+      localStorage.setItem('dronehub_user', JSON.stringify(response.user))
+      toast.success('Logged in successfully')
       router.push('/dashboard')
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+    } catch (error: any) {
+      const msg = error.message || 'Invalid email or password'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setIsLoading(false)
     }

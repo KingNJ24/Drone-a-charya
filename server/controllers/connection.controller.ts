@@ -12,6 +12,13 @@ import {
 export const connectionController = {
   async list(request: NextRequest) {
     const session = requireAuth(request)
+    const type = request.nextUrl.searchParams.get('type')
+    
+    if (type === 'pending') {
+      const requests = await connectionService.getPendingRequests(session.userId)
+      return ok({ requests })
+    }
+
     const connections = await connectionService.listForUser(session.userId)
     return ok({ connections })
   },

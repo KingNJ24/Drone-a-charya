@@ -11,6 +11,14 @@ export const userController = {
     return ok(await userService.getById(id))
   },
 
+  async list(request: NextRequest) {
+    const role = request.nextUrl.searchParams.get('role') as any
+    if (role) {
+      return ok(await userService.listByRole(role))
+    }
+    return ok([])
+  },
+
   async update(request: NextRequest) {
     const session = requireAuth(request)
     const body = validate(updateUserSchema, await request.json())

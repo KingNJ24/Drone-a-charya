@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { apiClient } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Empty,
   EmptyDescription,
@@ -10,116 +12,73 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import Link from 'next/link'
-
-interface FeedItem {
-  id: string
-  user: {
-    name: string
-    avatar: string
-    role: string
-  }
-  type: 'project_created' | 'project_updated' | 'connection_made' | 'comment'
-  content: string
-  metadata?: {
-    projectName?: string
-    projectId?: string
-  }
-  timestamp: string
-  likes: number
-  comments: number
-  liked: boolean
-}
+import { toast } from 'sonner'
+import { Star, MessageSquare, Share2, Heart } from 'lucide-react'
+import { RoleBadge } from '@/components/dashboard/role-badge'
 
 export default function FeedPage() {
-  const [feedItems] = useState<FeedItem[]>([
-    {
-      id: '1',
-      user: {
-        name: 'Alex Chen',
-        avatar: 'A',
-        role: 'Student'
-      },
-      type: 'project_created',
-      content: 'Created a new project: Autonomous Crop Monitoring Drone',
-      metadata: {
-        projectName: 'Autonomous Crop Monitoring Drone',
-        projectId: '1'
-      },
-      timestamp: '2 hours ago',
-      likes: 12,
-      comments: 3,
-      liked: false
-    },
-    {
-      id: '2',
-      user: {
-        name: 'Sarah Johnson',
-        avatar: 'S',
-        role: 'Teacher'
-      },
-      type: 'project_updated',
-      content: 'Updated documentation for Quad Copter Design - added aerodynamics section',
-      metadata: {
-        projectName: 'Quad Copter Design',
-        projectId: '2'
-      },
-      timestamp: '4 hours ago',
-      likes: 8,
-      comments: 2,
-      liked: false
-    },
-    {
-      id: '3',
-      user: {
-        name: 'TechCorp Industries',
-        avatar: 'T',
-        role: 'Company'
-      },
-      type: 'connection_made',
-      content: 'is now following your projects. Connect back to see their work!',
-      timestamp: '6 hours ago',
-      likes: 0,
-      comments: 0,
-      liked: false
-    },
-    {
-      id: '4',
-      user: {
-        name: 'Michael Wang',
-        avatar: 'M',
-        role: 'Student'
-      },
-      type: 'comment',
-      content: 'Just checked out your drone design - really impressive use of composite materials!',
-      timestamp: '8 hours ago',
-      likes: 5,
-      comments: 1,
-      liked: false
-    },
-  ])
+  const [projects, setProjects] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const [likedItems, setLikedItems] = useState<Set<string>>(new Set())
-
-  const handleLike = (itemId: string) => {
-    setLikedItems(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId)
-      } else {
-        newSet.add(itemId)
+  useEffect(() => {
+    const fetchFeed = async () => {
+      try {
+        const response = await apiClient.get<any>('/api/projects')
+        setProjects(response.data)
+      } catch (error) {
+        toast.error('Failed to load feed')
+      } finally {
+        setLoading(false)
       }
-      return newSet
-    })
+    }
+    fetchFeed()
+  }, [])
+
+  const handleLike = async (projectId: string) => {
+    try {
+      const response = await apiClient.post<any>(`/api/projects/${projectId}/like`, {})
+      setProjects(projects.map(p => 
+        p.id === projectId 
+          ? { ...p, _count: { ...p._count, likes: response.count }, liked: response.liked }
+          : p
+      ))
+      toast.success(response.liked ? 'Project liked' : 'Project unliked')
+    } catch (error) {
+      toast.error('Failed to like project')
+    }
   }
 
-  const getTypeIcon = (type: string) => {
-    const icons: Record<string, string> = {
-      project_created: '🚀',
-      project_updated: '📝',
-      connection_made: '👥',
-      comment: '💬'
-    }
-    return icons[type] || '📢'
+  if (loading) {
+    return <div className="p-8 text-center">Loading feed...</div>
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="flex-1 space-y-8 p-8">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold text-foreground">Feed</h1>
+          <p className="text-muted-foreground">Stay updated with your network&apos;s activity</p>
+        </div>
+        <div className="flex h-[450px] items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-primary/5">
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>Your feed is empty</EmptyTitle>
+              <EmptyDescription>
+                Start by following other drone enthusiasts or uploading your own projects!
+              </EmptyDescription>
+            </EmptyHeader>
+            <div className="mt-6 flex justify-center gap-4">
+              <Link href="/dashboard/projects/create">
+                <Button className="rounded-full">Create Project</Button>
+              </Link>
+              <Link href="/dashboard/explore">
+                <Button variant="outline" className="rounded-full">Explore</Button>
+              </Link>
+            </div>
+          </Empty>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -129,63 +88,74 @@ export default function FeedPage() {
         <p className="text-muted-foreground">Stay updated with your network&apos;s activity</p>
       </div>
 
-      {feedItems.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>Your feed is empty</EmptyTitle>
-            <EmptyDescription>
-              Follow users and join projects to see updates in your feed
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className="max-w-2xl space-y-4">
-          {feedItems.map((item) => (
-            <Card key={item.id} className="hover:border-primary/50 transition-colors">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4">
-                    <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
-                      {item.user.avatar}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-base">{item.user.name}</CardTitle>
-                        <span className="text-xs text-muted-foreground">{item.user.role}</span>
-                      </div>
-                      <CardDescription className="text-xs">{item.timestamp}</CardDescription>
-                    </div>
-                  </div>
-                  <span className="text-2xl">{getTypeIcon(item.type)}</span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-foreground">{item.content}</p>
-                {item.metadata?.projectName && (
-                  <Link href={`/dashboard/projects/${item.metadata.projectId}`}>
-                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 hover:border-primary/50 transition-colors cursor-pointer">
-                      <p className="text-sm font-semibold text-primary">{item.metadata.projectName}</p>
-                    </div>
+      <div className="mx-auto max-w-2xl space-y-6">
+        {projects.map((project) => (
+          <Card key={project.id} className="overflow-hidden rounded-2xl border-border/80 shadow-sm transition-all hover:shadow-md">
+            <CardHeader className="flex flex-row items-center gap-4 space-y-0 p-4">
+              <Link href={`/dashboard/profile?id=${project.author.id}`}>
+                <Avatar className="size-10 ring-2 ring-background">
+                  <AvatarImage src={project.author.avatar} />
+                  <AvatarFallback>{project.author.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+              </Link>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <Link href={`/dashboard/profile?id=${project.author.id}`} className="font-semibold hover:underline">
+                    {project.author.name}
                   </Link>
-                )}
-                <div className="flex gap-4 text-xs text-muted-foreground">
-                  <button
-                    onClick={() => handleLike(item.id)}
-                    className={`flex items-center gap-1 hover:text-primary transition-colors ${
-                      likedItems.has(item.id) ? 'text-primary' : ''
-                    }`}
-                  >
-                    {likedItems.has(item.id) ? '❤️' : '🤍'} {(item.likes + (likedItems.has(item.id) ? 1 : 0))}
-                  </button>
-                  <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                    💬 {item.comments}
-                  </button>
+                  <RoleBadge role={project.author.role.toLowerCase()} />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                <p className="text-xs text-muted-foreground">
+                  {new Date(project.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4 pt-0">
+              <div className="space-y-2">
+                <Link href={`/dashboard/projects/${project.id}`}>
+                  <h3 className="text-xl font-bold text-primary hover:underline">{project.title}</h3>
+                </Link>
+                <p className="text-sm leading-relaxed text-muted-foreground line-clamp-3">
+                  {project.description}
+                </p>
+              </div>
+
+              {project.tags && project.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {project.tags.map((tag: string) => (
+                    <span key={tag} className="rounded-full bg-secondary/50 px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t pt-4">
+                <div className="flex items-center gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className={`rounded-full gap-2 ${project.liked ? 'text-primary' : 'text-muted-foreground'}`}
+                    onClick={() => handleLike(project.id)}
+                  >
+                    <Heart className={`size-4 ${project.liked ? 'fill-current' : ''}`} />
+                    <span className="text-xs font-medium">{project._count?.likes || 0}</span>
+                  </Button>
+                  <Link href={`/dashboard/projects/${project.id}`}>
+                    <Button variant="ghost" size="sm" className="rounded-full gap-2 text-muted-foreground">
+                      <MessageSquare className="size-4" />
+                      <span className="text-xs font-medium">{project._count?.comments || 0}</span>
+                    </Button>
+                  </Link>
+                </div>
+                <Button variant="ghost" size="sm" className="rounded-full text-muted-foreground">
+                  <Share2 className="size-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }

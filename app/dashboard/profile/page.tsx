@@ -2,15 +2,7 @@
 
 import * as React from 'react'
 import { Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import {
-  MOCK_ACTIVITY,
-  MOCK_ME,
-  MOCK_MENTOR_PROFILE,
-  MOCK_PROFILE_REPOS,
-  type MockUser,
-} from '@/lib/mock/dashboard-data'
+import { apiClient } from '@/lib/api-client'
 import { RoleBadge } from '@/components/dashboard/role-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -20,68 +12,82 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Star, GitFork, Users } from 'lucide-react'
+import { Star, MapPin } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { useSearchParams } from 'next/navigation'
 
-const connectionRows = [
-  { name: 'Aria Kovacs', role: 'student' as const, mutual: 12 },
-  { name: 'Vertex Aerial', role: 'company' as const, mutual: 4 },
-  { name: 'James Okonkwo', role: 'teacher' as const, mutual: 8 },
-]
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+  avatar?: string
+  bio?: string
+  skills: string[]
+  projects: any[]
+}
 
 function ProfileContent() {
   const searchParams = useSearchParams()
-  const view = searchParams.get('view')
-  const isMentorPreview = view === 'mentor'
-
-  const [me, setMe] = React.useState<MockUser>(MOCK_ME)
+  const userIdFromQuery = searchParams.get('id')
+  
+  const [user, setUser] = React.useState<User | null>(null)
+  const [currentUser, setCurrentUser] = React.useState<User | null>(null)
   const [loading, setLoading] = React.useState(true)
-
-  const profile: MockUser = isMentorPreview ? MOCK_MENTOR_PROFILE : me
-  const showMentorshipCta =
-    !isMentorPreview
-      ? false
-      : me.role === 'student' && profile.role === 'teacher'
+  const [isEditing, setIsEditing] = React.useState(false)
 
   React.useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      const supabase = createClient()
+    const storedUser = localStorage.getItem('dronehub_user')
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser) as User)
+    }
+
+    const fetchProfile = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!cancelled && user) {
-          const meta = user.user_metadata as Record<string, unknown> | undefined
-          const next: MockUser = {
-            ...MOCK_ME,
-            name: (typeof meta?.name === 'string' && meta.name) || MOCK_ME.name,
-            email: user.email || undefined,
-            role:
-              meta?.role === 'teacher' || meta?.role === 'company' || meta?.role === 'student'
-                ? meta.role
-                : MOCK_ME.role,
-            bio: typeof meta?.bio === 'string' ? meta.bio : MOCK_ME.bio,
-            skills: Array.isArray(meta?.skills) ? (meta.skills as string[]) : MOCK_ME.skills,
-          }
-          setMe(next)
-        }
-      } catch {
-        /* mock */
+        const id = userIdFromQuery || (storedUser ? JSON.parse(storedUser).id : null)
+        if (!id) return
+        const data = await apiClient.get<User>(`/api/users/${id}`)
+        setUser(data)
+      } catch (error) {
+        toast.error('Failed to load profile')
       } finally {
-        await new Promise((r) => setTimeout(r, 350))
-        if (!cancelled) setLoading(false)
+        setLoading(false)
       }
     }
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
-  if (loading) {
-    return <ProfileLoading />
+    fetchProfile()
+  }, [userIdFromQuery])
+
+  const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    const name = formData.get('name') as string
+    const bio = formData.get('bio') as string
+    const skillsInput = formData.get('skills') as string
+    
+    const data = {
+      name,
+      bio,
+      skills: skillsInput ? skillsInput.split(',').map(s => s.trim()).filter(Boolean) : [],
+    }
+
+    try {
+      const updatedUser = await apiClient.put<User>('/api/users/update', data)
+      setUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser)
+      setCurrentUser(updatedUser)
+      localStorage.setItem('dronehub_user', JSON.stringify(updatedUser))
+      setIsEditing(false)
+      toast.success('Profile updated successfully')
+    } catch (error) {
+      toast.error('Failed to update profile')
+    }
   }
+
+  if (loading) return <ProfileLoading />
+  if (!user) return <div className="p-8 text-center">User not found</div>
+
+  const isOwnProfile = currentUser?.id === user.id
 
   return (
     <div className="-mx-4 space-y-6 md:-mx-8">
@@ -93,62 +99,79 @@ function ProfileContent() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
             <Avatar className="-mt-16 size-28 border-4 border-background shadow-xl ring-1 ring-border/80 sm:-mt-20 sm:size-32">
-              <AvatarImage src={profile.avatarUrl} alt="" />
+              <AvatarImage src={user.avatar} alt="" />
               <AvatarFallback className="text-2xl font-bold">
-                {profile.name.slice(0, 2)}
+                {user.name ? user.name.slice(0, 2).toUpperCase() : '??'}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 pb-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                  {profile.name}
+                  {user.name}
                 </h1>
-                <RoleBadge role={profile.role} />
+                <RoleBadge role={user.role ? user.role.toLowerCase() : 'student'} />
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">@{profile.handle}</p>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                {profile.headline}
-              </p>
-              {profile.location && (
-                <p className="mt-2 text-xs text-muted-foreground">{profile.location}</p>
-              )}
+              <p className="mt-1 text-sm text-muted-foreground">@{user.email ? user.email.split('@')[0] : 'user'}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button className="rounded-full" variant={isMentorPreview ? 'default' : 'outline'}>
-              {isMentorPreview ? 'Connect' : 'Share profile'}
-            </Button>
-            {showMentorshipCta && (
-              <Button className="rounded-full" variant="secondary">
-                Request Mentorship
+            {isOwnProfile ? (
+              <Button className="rounded-full" onClick={() => setIsEditing(!isEditing)}>
+                {isEditing ? 'Cancel' : 'Edit Profile'}
               </Button>
+            ) : (
+              <>
+                <Button className="rounded-full">Connect</Button>
+                {currentUser?.role === 'STUDENT' && user.role === 'TEACHER' && (
+                  <Button className="rounded-full" variant="secondary">
+                    Request Mentorship
+                  </Button>
+                )}
+                <Button variant="outline" className="rounded-full">
+                  Message
+                </Button>
+              </>
             )}
-            <Button variant="outline" className="rounded-full">
-              Message
-            </Button>
           </div>
         </div>
 
-        {!isMentorPreview && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            Preview a mentor profile:{' '}
-            <Link
-              href="/dashboard/profile?view=mentor"
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              view mentor layout
-            </Link>
-          </p>
+        {isEditing && (
+          <Card className="mt-6 rounded-2xl border-primary/20 shadow-sm">
+            <CardContent className="p-6">
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input id="name" name="name" defaultValue={user.name} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="skills">Skills (comma separated)</Label>
+                    <Input id="skills" name="skills" defaultValue={user.skills ? user.skills.join(', ') : ''} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Bio</Label>
+                  <textarea
+                    id="bio"
+                    name="bio"
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    defaultValue={user.bio || ''}
+                  />
+                </div>
+                <Button type="submit">Save Changes</Button>
+              </form>
+            </CardContent>
+          </Card>
         )}
 
         <div className="mt-8 rounded-2xl border border-border/80 bg-card/50 p-6 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             About
           </h2>
-          <p className="mt-2 text-sm leading-relaxed">{profile.bio}</p>
+          <p className="mt-2 text-sm leading-relaxed">{user.bio || 'No bio provided yet.'}</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            {profile.skills.map((s) => (
+            {user.skills && user.skills.map((s: string) => (
               <span
                 key={s}
                 className="rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs font-medium"
@@ -158,32 +181,6 @@ function ProfileContent() {
             ))}
           </div>
         </div>
-
-        {!isMentorPreview && (
-          <Card className="mt-6 rounded-2xl border-border/80 shadow-sm">
-            <CardContent className="p-6">
-              <h3 className="text-sm font-semibold">Edit profile (sync)</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Updates your session metadata when using Supabase auth.
-              </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="p-bio">Bio</Label>
-                  <Input
-                    id="p-bio"
-                    defaultValue={me.bio}
-                    onBlur={async (e) => {
-                      const supabase = createClient()
-                      await supabase.auth.updateUser({
-                        data: { bio: e.target.value },
-                      })
-                    }}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         <Tabs defaultValue="projects" className="mt-8">
           <TabsList className="h-auto w-full justify-start gap-1 rounded-2xl bg-muted/40 p-1">
@@ -198,14 +195,14 @@ function ProfileContent() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="projects" className="mt-6 space-y-4">
-            {MOCK_PROFILE_REPOS.length === 0 ? (
+            {!user.projects || user.projects.length === 0 ? (
               <Card className="rounded-2xl border-dashed">
                 <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                  No public projects yet. Pin a repo from your workspace.
+                  No public projects yet.
                 </CardContent>
               </Card>
             ) : (
-              MOCK_PROFILE_REPOS.map((repo) => (
+              user.projects.map((repo: any) => (
                 <Card
                   key={repo.id}
                   className="rounded-2xl border-border/80 shadow-sm transition-shadow hover:shadow-md"
@@ -217,34 +214,16 @@ function ProfileContent() {
                           href={`/dashboard/projects/${repo.id}`}
                           className="text-lg font-semibold text-primary hover:underline"
                         >
-                          {repo.name}
+                          {repo.title}
                         </Link>
                         <CardDescription className="text-sm leading-relaxed">
                           {repo.description}
                         </CardDescription>
-                        <div className="flex flex-wrap gap-2">
-                          {repo.tags.map((t) => (
-                            <span
-                              key={t}
-                              className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
-                            >
-                              {t}
-                            </span>
-                          ))}
-                        </div>
                       </div>
                       <div className="flex shrink-0 gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Star className="size-4" />
-                          {repo.stars}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <GitFork className="size-4" />
-                          {repo.forks}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="size-4" />
-                          {repo.contributors}
+                          {repo.starsCount}
                         </span>
                       </div>
                     </div>
@@ -255,43 +234,113 @@ function ProfileContent() {
           </TabsContent>
           <TabsContent value="activity" className="mt-6">
             <Card className="rounded-2xl border-border/80">
-              <CardContent className="divide-y divide-border/60 p-0">
-                {MOCK_ACTIVITY.map((a, i) => (
-                  <div key={a.id} className="flex items-center justify-between gap-4 px-5 py-4">
-                    <p className="text-sm">{a.text}</p>
-                    <span className="shrink-0 text-xs text-muted-foreground">{a.time}</span>
-                    {i < MOCK_ACTIVITY.length - 1 ? null : null}
-                  </div>
-                ))}
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                Activity feed coming soon.
               </CardContent>
             </Card>
           </TabsContent>
           <TabsContent value="connections" className="mt-6">
-            <Card className="rounded-2xl border-border/80">
-              <CardContent className="p-0">
-                {connectionRows.map((c, i) => (
-                  <div key={c.name}>
-                    <div className="flex items-center justify-between gap-4 px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback>{c.name.slice(0, 2)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium">{c.name}</p>
-                          <RoleBadge role={c.role} className="mt-1" />
-                        </div>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {c.mutual} mutual
-                      </span>
-                    </div>
-                    {i < connectionRows.length - 1 && <Separator />}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <ConnectionsTab userId={user.id} isOwnProfile={isOwnProfile} />
           </TabsContent>
         </Tabs>
+      </div>
+    </div>
+  )
+}
+
+function ConnectionsTab({ userId, isOwnProfile }: { userId: string, isOwnProfile: boolean }) {
+  const [connections, setConnections] = React.useState<any[]>([])
+  const [pending, setPending] = React.useState<any[]>([])
+  const [loading, setLoading] = React.useState(true)
+
+  React.useEffect(() => {
+    fetchConnections()
+  }, [userId])
+
+  const fetchConnections = async () => {
+    try {
+      const data = await apiClient.get<any>(`/api/connect`)
+      setConnections(data.connections || [])
+      
+      if (isOwnProfile) {
+        const pendingData = await apiClient.get<any>(`/api/connect?type=pending`)
+        setPending(pendingData.requests || [])
+      }
+    } catch (error) {
+      toast.error('Failed to load connections')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateStatus = async (requestId: string, status: 'ACCEPTED' | 'REJECTED') => {
+    try {
+      await apiClient.patch(`/api/connect/${requestId}`, { status })
+      toast.success(`Connection ${status.toLowerCase()}`)
+      fetchConnections()
+    } catch (error) {
+      toast.error('Failed to update connection')
+    }
+  }
+
+  if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+
+  return (
+    <div className="space-y-6">
+      {isOwnProfile && pending.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-primary">Pending Requests</h3>
+          {pending.map((req) => (
+            <Card key={req.id} className="rounded-xl border-primary/20 bg-primary/5">
+              <CardContent className="p-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="size-10">
+                    <AvatarImage src={req.sender.avatar} />
+                    <AvatarFallback>{req.sender.name ? req.sender.name.slice(0, 2).toUpperCase() : '??'}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-semibold">{req.sender.name}</p>
+                    <RoleBadge role={req.sender.role ? req.sender.role.toLowerCase() : 'student'} />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" className="rounded-full" onClick={() => handleUpdateStatus(req.id, 'ACCEPTED')}>Accept</Button>
+                  <Button size="sm" variant="ghost" className="rounded-full" onClick={() => handleUpdateStatus(req.id, 'REJECTED')}>Decline</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold">Connections</h3>
+        {connections.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8 border border-dashed rounded-xl">No connections yet.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {connections.map((conn) => {
+              const other = conn.senderId === userId ? conn.receiver : conn.sender
+              if (!other) return null
+              return (
+                <Card key={conn.id} className="rounded-xl shadow-sm">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Avatar className="size-10">
+                      <AvatarImage src={other.avatar} />
+                      <AvatarFallback>{other.name ? other.name.slice(0, 2).toUpperCase() : '??'}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <Link href={`/dashboard/profile?id=${other.id}`} className="text-sm font-semibold hover:underline block truncate">
+                        {other.name}
+                      </Link>
+                      <RoleBadge role={other.role ? other.role.toLowerCase() : 'student'} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -302,8 +351,8 @@ function ProfileLoading() {
     <div className="space-y-6">
       <Skeleton className="h-40 w-full rounded-2xl" />
       <div className="flex gap-4">
-        <Skeleton className="size-28 shrink-0 rounded-full" />
-        <div className="flex-1 space-y-2 pt-8">
+      <Skeleton className="h-28 w-28 shrink-0 rounded-full" />
+      <div className="flex-1 space-y-2 pt-8">
           <Skeleton className="h-8 w-48 rounded-lg" />
           <Skeleton className="h-4 w-32 rounded-md" />
         </div>
