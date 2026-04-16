@@ -138,8 +138,8 @@ function ProfileContent() {
                     Request Mentorship
                   </Button>
                 )}
-                <Button variant="outline" className="rounded-full">
-                  Message
+                <Button variant="outline" className="rounded-full" asChild>
+                  <Link href={`/dashboard/messages?userId=${user.id}`}>Message</Link>
                 </Button>
               </>
             )}
