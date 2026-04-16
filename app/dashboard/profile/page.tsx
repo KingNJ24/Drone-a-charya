@@ -62,12 +62,12 @@ function ProfileContent() {
   const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const name = formData.get('name') as string
+    const newName = formData.get('name') as string
     const bio = formData.get('bio') as string
     const skillsInput = formData.get('skills') as string
     
     const data = {
-      name,
+      name: newName,
       bio,
       skills: skillsInput ? skillsInput.split(',').map(s => s.trim()).filter(Boolean) : [],
     }
@@ -84,10 +84,20 @@ function ProfileContent() {
     }
   }
 
+  const handleConnect = async () => {
+    if (!user) return
+    try {
+      await apiClient.post('/api/connect', { receiverId: user.id })
+      toast.success('Connection request sent!')
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send connection request')
+    }
+  }
+
   if (loading) return <ProfileLoading />
   if (!user) return <div className="p-8 text-center">User not found</div>
 
-  const isOwnProfile = currentUser?.id === user.id
+  const isOwnProfile = !userIdFromQuery || currentUser?.id === user.id
 
   return (
     <div className="-mx-4 space-y-6 md:-mx-8">
@@ -122,7 +132,7 @@ function ProfileContent() {
               </Button>
             ) : (
               <>
-                <Button className="rounded-full">Connect</Button>
+                <Button className="rounded-full" onClick={handleConnect}>Connect</Button>
                 {currentUser?.role === 'STUDENT' && user.role === 'TEACHER' && (
                   <Button className="rounded-full" variant="secondary">
                     Request Mentorship

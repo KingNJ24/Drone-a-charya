@@ -155,7 +155,19 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem('dronehub_user')
     if (storedUser) {
-      setUser(JSON.parse(storedUser))
+      const parsedUser = JSON.parse(storedUser)
+      setUser(parsedUser)
+      
+      // Fetch latest user data to sync session
+      apiClient.get<User>(`/api/users/${parsedUser.id}`)
+        .then(latestUser => {
+          setUser(latestUser)
+          localStorage.setItem('dronehub_user', JSON.stringify(latestUser))
+        })
+        .catch(() => {
+          // If fetch fails (e.g. 401), keep using stored user or logout
+          console.warn('Failed to sync user data')
+        })
     } else {
       router.push('/auth/login')
     }
